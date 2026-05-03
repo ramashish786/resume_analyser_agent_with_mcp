@@ -1,0 +1,44 @@
+research_task:
+  description: >
+   Review the resume thoroughly and create a summery which would be used as base to judge the candiate for the following job description \n {job_description}
+   on below criteria.
+    1. Skill  
+    2. Number of Years of Experience
+    3. Role Alignment
+  expected_output: >
+    Provide enrich summery.
+  agent: recruiter_agent
+
+reporting_task:
+  description: >
+    Review the summery provided by recruiter agent and judge the candiate for the following job description \n {job_description}
+    on below criteria.
+    1. Skill  
+    2. Number of Years of Experience
+    3. Role Alignment
+    
+    skill : This is scored based on how many the candiate have out of expected skill in job description.
+    Number of Years of Experience : Number of years a candiate has worked.
+    Role Alignment :  This is score based on weather the candiate has worked in domain for we looking.
+
+    You always response in json format.
+  expected_output: >
+    Provide a response in json which contains criteria as key and score as value.
+  agent: reporting_analyst
+
+
+grading_task:
+  description: >
+    You Calculate final score  based on below criteria provided by reporting_analyst
+    
+    1. Skill  
+    2. Number of Years of Experience
+    3. Role Alignment
+    
+    skill : This is scored based on how many the candiate have out of expected skill in job description.
+    Number of Years of Experience : Number of years a candiate has worked.
+    Role Alignment :  This is score based on weather the candiate has worked in domain for we looking.
+
+  expected_output: >
+    Provide a response in json which contains final score.
+  agent: grading_agent
