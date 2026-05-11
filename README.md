@@ -1,204 +1,186 @@
-# 🚀 Researcher Crew (CrewAI Multi-Agent System)
+# 📄 Resume Screening Crew
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
-![CrewAI](https://img.shields.io/badge/Framework-CrewAI-orange)
-![UV](https://img.shields.io/badge/Package%20Manager-uv-green)
-![Status](https://img.shields.io/badge/Status-Active-success)
-![License](https://img.shields.io/badge/License-MIT-lightgrey)
+A multi-agent resume screening system that reads candidate resumes, scores them against
+a job description, and sends an interview invitation or polite rejection email
+automatically.
 
-A **modular multi-agent AI system** built using [crewAI](https://crewai.com) to automate research workflows.  
-This project demonstrates how multiple AI agents collaborate using tools, memory, and structured workflows.
+Built with **CrewAI** (agent orchestration), **FastMCP** (custom tools), **FastAPI**
+(backend), and **Streamlit** (frontend).
 
 ---
 
-## ✨ Features
+## What this application does
 
-- 🤖 Multi-agent collaboration (Researcher, Writer, etc.)
-- 🧠 Extensible architecture (RAG-ready)
-- 🛠️ Custom tool integration
-- ⚡ Fast dependency management using `uv`
-- 📦 Clean, scalable project structure
-- 🔌 Ready for FastMCP tool integration
+You upload one or more candidate resumes (PDF) and provide a job description. The system
+runs four AI agents in sequence:
+
+1. **Recruiter Agent** — reads the PDF, extracts the candidate's name and email, and
+   produces a structured summary against three criteria (skill, years of experience,
+   role alignment).
+2. **Reporting Analyst** — converts the recruiter's prose summary into numeric scores
+   (1–10 scale) for each criterion.
+3. **Scoring Agent** — calls a weighted `grader` tool to produce one final score
+   (weights: role_alignment 5, skill 3, yof 2).
+4. **Send Mail Agent** — based on the final score:
+   - **score ≥ 6** → sends an interview invitation with a proposed date 5 days out.
+   - **score < 6** → sends a polite rejection.
+
+Emails are sent via Gmail SMTP. A consolidated JSON file containing the summary, scores,
+final score, and email result is written to `output/{resume_name}.json` for every
+candidate processed.
+
+The Streamlit UI lets you upload resumes, list and remove them (which also cleans up
+their result file), edit the job description, and run the screening pipeline with
+live progress updates.
 
 ---
 
-## 🏗️ Architecture
+## Project structure
 
-```mermaid
-flowchart TD
-    A[User Input] --> B[main.py]
-    B --> C[Crew Initialization]
-    C --> D[Agents]
-    D --> E[Tasks]
-    E --> F[Tools]
-    F --> G[External APIs / Knowledge Base]
-    G --> H[Processed Output]
-    H --> I[Output Files]
+```
+crewai/researcher/
+├── knowledge/                       # resume PDFs (managed via the UI)
+├── output/                          # per-candidate consolidated JSON results
+├── app.py                           # frontend (project root)
+└── src/researcher/
+    ├── api.py                       # FastAPI backend
+    ├── crew.py                      # CrewAI crew + pydantic output schemas
+    ├── main.py                      # CLI entrypoint (alternative to the UI)
+    ├── config/
+    │   ├── agents.yaml              # agent definitions
+    │   └── tasks.yaml               # task definitions
+    └── tools/
+        └── custom_tool.py           # FastMCP server: grader + send_email tools
 ```
 
 ---
 
-## 📁 Project Structure
+## Prerequisites
 
-```bash
-crewai-researcher/
-├── .venv/
-├── knowledge/           # Knowledge base (RAG-ready)
-├── output/              # Generated outputs
-
-├── src/
-│   └── researcher/
-│       ├── config/      # Agent & task configs
-│       ├── tools/       # Custom tools
-│       ├── crew.py      # Crew definition
-│       └── main.py      # Entry point
-
-├── .env
-├── pyproject.toml
-├── uv.lock
-└── README.md
-```
+- **Python 3.10+**
+- **[uv](https://docs.astral.sh/uv/)** for dependency management
+- **A Gmail account with an App Password**
+  - Enable 2-Step Verification on your Google account.
+  - Generate an App Password at https://myaccount.google.com/apppasswords.
 
 ---
 
-## ⚡ Installation
+## Installation
 
-### 1. Install `uv`
-
-```bash
-pip install uv
-```
-
----
-
-### 2. Setup Environment
+From the project root (`crewai/researcher/`):
 
 ```bash
+# 1. Create a virtual environment
 uv venv
-```
 
-Activate:
-
-**Windows**
-```bash
+# 2. Activate it
+# Windows
 .venv\Scripts\activate
-```
-
-**Mac/Linux**
-```bash
+# macOS / Linux
 source .venv/bin/activate
+
+# 3. Install project dependencies
+uv pip install -e .
+
+# 4. Install extras needed for the backend and frontend
+uv pip install fastapi "uvicorn[standard]" python-multipart streamlit requests
 ```
 
 ---
 
-### 3. Install Dependencies
+## Environment variables
+
+Set these in the shell that runs the backend (or place them in a `.env` at the
+project root that your tooling auto-loads):
 
 ```bash
-uv pip install -e .
+# Required for the send_email tool
+GMAIL_USER=you@gmail.com
+GMAIL_APP_PASSWORD=abcdefghijklmnop
+
+# Required by CrewAI to drive the LLM agents
+OPENAI_API_KEY=sk-...
+```
+
+**Windows PowerShell:**
+
+```powershell
+$env:GMAIL_USER = "you@gmail.com"
+$env:GMAIL_APP_PASSWORD = "abcdefghijklmnop"
+$env:OPENAI_API_KEY = "sk-..."
+```
+
+Do **not** set `OUTPUT_DIR` or `RESUMES_DIR` unless you want to override the defaults.
+The backend and CLI read/write to the same hardcoded paths (`knowledge/` and `output/`
+inside the project) when these are unset.
+
+---
+
+## Start the backend
+
+Open a terminal in the project root and run:
+
+```bash
+uv run uvicorn researcher.api:app --port 8000
+```
+
+Verify it's reachable:
+
+```bash
+curl http://localhost:8000/health
+```
+
+You should see paths to `knowledge/` and `output/` and `"gmail_configured": true`.
+
+Interactive API docs are available at http://localhost:8000/docs.
+
+---
+
+## Start the frontend
+
+Open a second terminal in the project root and run:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+Streamlit will open at http://localhost:8501.
+
+If your backend runs on a different host or port:
+
+```bash
+API_URL=http://localhost:8000 streamlit run streamlit_app.py
 ```
 
 ---
 
-## 🔑 Environment Variables
+## Using the UI
 
-Create a `.env` file:
-
-```env
-OPENAI_API_KEY=your_api_key_here
-```
+1. **Sidebar** — confirms the backend is reachable and Gmail is configured.
+2. **Job description** — type or paste the role you're screening for.
+3. **Upload resumes** — drop one or more PDFs, click *Upload to backend*.
+4. **Manage resumes** — each uploaded PDF has a *Remove* button that deletes both
+   the PDF and its associated result JSON.
+5. **Run screening** — set the interview-date offset (default 5 days) and keep
+   *Dry run* checked while testing (it bypasses real email sending). Click *Run*.
+6. **Results** — a table fills in live as each resume is processed. The raw
+   consolidated JSON is available under the expander at the bottom.
 
 ---
 
-## ▶️ Running the Project
+## Alternative: command-line use
+
+If you don't need the UI, the CLI works the same as before:
 
 ```bash
 uv run crewai run
 ```
----
 
-## 🧠 How It Works
+This runs `main.py`, which processes every PDF currently in `knowledge/`.
 
-1. `main.py` initializes the crew  
-2. `crew.py` defines agents and workflows  
-3. Agents execute tasks defined in `config/`  
-4. Tools fetch/process external data  
-5. Final output is stored in `output/`  
-
----
-
-## 🔄 Agent Workflow
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant M as main.py
-    participant C as Crew
-    participant A as Agents
-    participant T as Tools
-
-    U->>M: Provide Input
-    M->>C: Initialize Crew
-    C->>A: Assign Tasks
-    A->>T: Use Tools
-    T-->>A: Return Data
-    A-->>C: Task Output
-    C-->>M: Final Result
-    M-->>U: Output
-```
-
----
-
-## 🧪 Testing
-
-```bash
-python test.py
-```
-
----
-
-## ⚙️ FastMCP Integration (Optional)
-
-Inspect tools:
-
-```bash
-uv run fastmcp dev inspector custom_tool.py
-```
-
-Run MCP server:
-
-```bash
-uv run fastmcp run custom_tool.py
-```
-
----
-
-## 🚀 Future Improvements
-
-- 🔍 Add full RAG pipeline (vector DB)
-- 🌐 API deployment (FastAPI)
-- 📊 Monitoring & logging (Langfuse / OpenTelemetry)
-- 🧠 Memory-enabled agents
-- ☁️ Cloud deployment (AWS / Azure)
-
----
-
-## 🤝 Contributing
-
-Feel free to fork this repo and extend it with:
-- New agents  
-- Better tools  
-- Improved workflows  
-
----
-
-## 📚 Resources
-
-- CrewAI Docs: https://docs.crewai.com  
-- UV Docs: https://docs.astral.sh/uv/  
-
----
-
-## ⭐ Final Note
-
-This project is part of my journey to **master AI Engineering & Multi-Agent Systems**.  
-If you find it useful, consider giving it a ⭐
+### Screen Shots
+![alt text](<img/img 1.jpg>)
+![alt text](<img/img 2.jpg>)
+![alt text](<img/img 3.jpg>)
+![alt text](img/img4.jpg)
+![alt text](img/img5.jpg)

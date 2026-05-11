@@ -1,92 +1,92 @@
-#!/usr/bin/env python
-import sys
-import warnings
+import json
+import os
+import traceback
+from datetime import date, timedelta
+from pathlib import Path
 
-from datetime import datetime
+from researcher.crew import Researcher  
 
-from researcher.crew import Researcher
 
-warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
-job_description = """
-I need a candidate who has 5 years of experience and know aws glue, step function, lambda and has worked in finance domain.
-"""
+RESUMES_DIR = Path(
+    "D:/machine_learning/test_projects/genai/udemy/crewai/researcher/knowledge"
+)
 
-def run():
-    """
-    Run the crew.
-    """
+OUTPUT_DIR = Path(
+    os.environ.get(
+        "OUTPUT_DIR",
+        "D:/machine_learning/test_projects/genai/udemy/crewai/researcher/output",
+    )
+)
+
+JOB_DESCRIPTION = (
+    "Senior Data Scientist with 5+ years of experience in Python, "
+    "machine learning, and NLP. Must have worked on production ML systems."
+)
+
+
+def _parse_task_output(task_output) -> object:
+    """Best-effort parse of a single task's raw output."""
+    try:
+        return json.loads(task_output.raw)
+    except (ValueError, TypeError):
+        return task_output.raw
+
+
+def process_resume(resume_path: Path, inputs: dict) -> None:
+    """Run the full crew pipeline for a single resume."""
+    print(f"\n{'=' * 60}")
+    print(f"Processing: {resume_path.name}")
+    print(f"{'=' * 60}")
+
+    researcher = Researcher(resume_path=str(resume_path))
+    try:
+        result = researcher.crew().kickoff(inputs=inputs)
+        print(f"\n--- Result for {resume_path.name} ---")
+        print(result)
+
+        research_out, reporting_out, scoring_out, mail_out = result.tasks_output
+
+        consolidated = {
+            "candidate_summary": _parse_task_output(research_out),
+            "criteria_scores": _parse_task_output(reporting_out),
+            "final_score": _parse_task_output(scoring_out),
+            "email_result": _parse_task_output(mail_out),
+        }
+
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = OUTPUT_DIR / f"{resume_path.stem}.json"
+        out_path.write_text(json.dumps(consolidated, indent=2))
+        print(f"✅ Wrote {out_path.resolve()}")
+
+    except Exception as e:
+        print(f"❌ Error processing {resume_path.name}: {type(e).__name__}: {e}")
+        traceback.print_exc()
+    finally:
+        researcher.close()
+
+
+def run() -> None:
+    today = date.today()
+    interview_date = today + timedelta(days=5)
+
     inputs = {
-        'job_description': job_description,
-        # 'current_year': str(datetime.now().year)
+        "job_description": JOB_DESCRIPTION,
+        "today_date": today.strftime("%A, %B %d, %Y"),
+        "interview_date": interview_date.strftime("%A, %B %d, %Y"),
     }
 
-    try:
-        Researcher().crew().kickoff(inputs=inputs)
-    except Exception as e:
-        raise Exception(f"An error occurred while running the crew: {e}")
+    pdf_files = sorted(RESUMES_DIR.glob("*.pdf"))
+    if not pdf_files:
+        print(f"No PDF files found in {RESUMES_DIR}")
+        return
+
+    print(f"Found {len(pdf_files)} resume(s) to process.")
+
+    for pdf in pdf_files:
+        process_resume(pdf, inputs)
+
+    print(f"\n✅ Done. Processed {len(pdf_files)} resume(s).")
 
 
-# def train():
-#     """
-#     Train the crew for a given number of iterations.
-#     """
-#     inputs = {
-#         "topic": "Cancer",
-#         'current_year': str(datetime.now().year)
-#     }
-#     try:
-#         Researcher().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
-
-#     except Exception as e:
-#         raise Exception(f"An error occurred while training the crew: {e}")
-
-# def replay():
-#     """
-#     Replay the crew execution from a specific task.
-#     """
-#     try:
-#         Researcher().crew().replay(task_id=sys.argv[1])
-
-#     except Exception as e:
-#         raise Exception(f"An error occurred while replaying the crew: {e}")
-
-# def test():
-#     """
-#     Test the crew execution and returns the results.
-#     """
-#     inputs = {
-#         "topic": "AI LLMs",
-#         "current_year": str(datetime.now().year)
-#     }
-
-#     try:
-#         Researcher().crew().test(n_iterations=int(sys.argv[1]), eval_llm=sys.argv[2], inputs=inputs)
-
-#     except Exception as e:
-#         raise Exception(f"An error occurred while testing the crew: {e}")
-
-# def run_with_trigger():
-#     """
-#     Run the crew with trigger payload.
-#     """
-#     import json
-
-#     if len(sys.argv) < 2:
-#         raise Exception("No trigger payload provided. Please provide JSON payload as argument.")
-
-#     try:
-#         trigger_payload = json.loads(sys.argv[1])
-#     except json.JSONDecodeError:
-#         raise Exception("Invalid JSON payload provided as argument")
-
-#     inputs = {
-#         "crewai_trigger_payload": trigger_payload,
-#         "topic": "",
-#         "current_year": ""
-#     }
-
-#     try:
-#         result = Researcher().crew().kickoff(inputs=inputs)
-#         return result
-#     except Exception as e:
-#         raise Exception(f"An error occurred while running the crew with trigger: {e}")
+if __name__ == "__main__":
+    run()

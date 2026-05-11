@@ -1,44 +1,127 @@
 research_task:
   description: >
-   Review the resume thoroughly and create a summery which would be used as base to judge the candiate for the following job description \n {job_description}
-   on below criteria.
-    1. Skill  
-    2. Number of Years of Experience
-    3. Role Alignment
+    Review the uploaded resume thoroughly and create an enriched summary of the candidate
+    for the following job description \n {job_description}.
+
+    Your summary must cover the candidate against these three criteria:
+      1. Skill
+      2. Number of Years of Experience
+      3. Role Alignment
+
+    Your summary must also explicitly extract and include:
+      - The candidate's full name
+      - The candidate's email address
+    Both will be used by downstream agents to send the outcome email.
   expected_output: >
-    Provide enrich summery.
+    A clear, structured summary that includes the candidate's name, email address,
+    and an assessment against the three criteria above.
   agent: recruiter_agent
+
 
 reporting_task:
   description: >
-    Review the summery provided by recruiter agent and judge the candiate for the following job description \n {job_description}
-    on below criteria.
-    1. Skill  
-    2. Number of Years of Experience
-    3. Role Alignment
-    
-    skill : This is scored based on how many the candiate have out of expected skill in job description.
-    Number of Years of Experience : Number of years a candiate has worked.
-    Role Alignment :  This is score based on weather the candiate has worked in domain for we looking.
+    Review the summary provided by recruiter_agent and score the candidate for the
+    following job description \n {job_description} on the criteria below.
 
-    You always response in json format.
+    Each criterion is scored on a scale of 1 to 10 (where 1 is the weakest match
+    and 10 is the strongest):
+
+      1. Skill - scored based on how many of the expected skills in the job description
+         the candidate has.
+      2. Number of Years of Experience - scored based on how many years the candidate
+         has worked relative to what the role requires.
+      3. Role Alignment - scored based on whether the candidate has worked in the domain
+         the role is targeting.
+
+    You always respond in JSON format.
+    Example:
+      {"skill": 8, "yof": 7, "role_alignment": 9}
   expected_output: >
-    Provide a response in json which contains criteria as key and score as value.
+    A JSON object with three integer fields on a 1-10 scale:
+    {"skill": <int>, "yof": <int>, "role_alignment": <int>}.
+    Return only the JSON object, with no extra commentary or markdown fences.
   agent: reporting_analyst
+  context:
+    - research_task
 
 
-grading_task:
+scoring_task:
   description: >
-    You Calculate final score  based on below criteria provided by reporting_analyst
-    
-    1. Skill  
-    2. Number of Years of Experience
-    3. Role Alignment
-    
-    skill : This is scored based on how many the candiate have out of expected skill in job description.
-    Number of Years of Experience : Number of years a candiate has worked.
-    Role Alignment :  This is score based on weather the candiate has worked in domain for we looking.
+    Calculate the candidate's final score using the grader tool, based on the
+    per-criterion scores produced by reporting_analyst.
 
+    The reporting_analyst returns scores on a 1-10 scale, and the grader tool
+    accepts inputs on the same 1-10 scale. Pass the scores through directly without
+    any normalization.
+
+    Call the grader tool exactly once with these arguments:
+      - skill          = the analyst's "skill" score
+      - yof            = the analyst's "yof" score
+      - role_alignment = the analyst's "role_alignment" score
+
+    Return the tool's output unchanged - do not invent or modify the score yourself.
+    Example:
+      {"score": 7.8}
   expected_output: >
-    Provide a response in json which contains final score.
-  agent: grading_agent
+    A JSON object with the final score on a 1-10 scale, exactly as returned by the
+    grader tool: {"score": <float>}. Return only the JSON object, with no extra
+    commentary or markdown fences.
+  agent: scoring_agent
+  context:
+    - reporting_task
+
+
+send_mail_task:
+  description: >
+    Send a personalized email to the candidate based on the final score produced by
+    scoring_task, for the role described in \n {job_description}.
+
+    Today is {today_date}. The proposed interview date (5 days from today) is
+    {interview_date}.
+
+    Inputs available via context:
+      - The candidate's name and email address (from research_task summary).
+      - One or two genuine strengths from the recruiter's summary (from research_task).
+      - The final score (from scoring_task). The score is on a 1-10 scale.
+
+    Decide which email to send based on the final score:
+
+    1. score >= 6 - Fit for interview:
+       Compose an interview invitation. Greet the candidate by name, mention the role
+       from the job description, reference one or two genuine strengths from the
+       recruiter's summary, and propose the interview on {interview_date}. Ask the
+       candidate to confirm or suggest an alternative time. Sign off as the recruiting
+       team.
+
+       Subject line: "Interview Invitation - <role from job_description>"
+
+    2. score < 6 - Not a fit at this time:
+       Compose a polite rejection. Thank the candidate by name for their time and
+       interest in the role, keep the tone respectful and encouraging, and leave the
+       door open for future opportunities. Do NOT list weaknesses, do NOT mention
+       scores or grades, and do NOT propose any interview date.
+
+       Subject line: "Update on your application - <role from job_description>"
+
+    Email rules (apply to both cases):
+      - Address the candidate by name (taken from the recruiter's summary).
+      - Keep the email under 200 words, professional, and warm.
+      - Sign off as the recruiting team for the role.
+      - Never reveal internal scores, grades, or evaluation criteria.
+
+    After composing subject and body, call the send_email tool exactly once with:
+      - to: the candidate's email address (from research_task summary)
+      - subject: the subject line you composed
+      - body: the email body you composed
+      - sender_name: "Recruiting Team"
+  expected_output: >
+    A JSON object confirming the outcome with these fields:
+      - status: "sent" or "failed",
+      - score: provide scoring agent
+      - email_type: "interview_invitation" or "rejection"
+      - to: the candidate's email address
+      - subject: the subject line used
+  agent: send_mail_agent
+  context:
+    - research_task
+    - scoring_task
